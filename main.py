@@ -12,23 +12,37 @@ file = st.file_uploader("Choose a file")
 if file:
     df = functions.generateDataFrame(file)
     try:
-        dayfirst = st.radio("Select Date Format in text file:",('dd-mm-yy', 'mm-dd-yy'))
-        if dayfirst=='dd-mm-yy':
-            dayfirst=True
-        else:
-            dayfirst=False
+        dayfirst = st.radio("Select Date Format in text file:", ('dd-mm-yy', 'mm-dd-yy'))
+        dayfirst = True if dayfirst == 'dd-mm-yy' else False
+        
         users = functions.getUsers(df)
         users_s = st.sidebar.selectbox("Select User to View Analysis", users)
-        selected_user=""
+        selected_user = ""
 
         if st.sidebar.button("Show Analysis"):
             selected_user = users_s
 
-            st.title("Showing Reults for : " + selected_user)
-            df = functions.PreProcess(df,dayfirst)
+            st.title("Showing Results for: " + selected_user)
+            df = functions.PreProcess(df, dayfirst)
             if selected_user != "Everyone":
                 df = df[df['User'] == selected_user]
-            df, media_cnt, deleted_msgs_cnt, links_cnt, word_count, msg_count = functions.getStats(df)
+            
+            df, media_cnt, deleted_msgs_cnt, links_cnt, word_count, msg_count, links_dict, reminders = functions.getStats(df)
+
+            # Display reminder messages
+            st.title("Reminder Messages")
+            for reminder in reminders:
+                st.write(reminder)
+
+            # Display links based on priority
+            st.title("Links Shared")
+            st.subheader("High Priority Links")
+            st.write(links_dict['high_priority'])
+
+            st.subheader("Low Priority Links")
+            st.write(links_dict['low_priority'])
+
+            # Chat Statistics
             st.title("Chat Statistics")
             stats_c = ["Total Messages", "Total Words", "Media Shared", "Links Shared", "Messages Deleted"]
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -58,16 +72,16 @@ if file:
                 col1, col2 = st.columns(2)
                 with col1:
                     st.dataframe(round((df['User'].value_counts() / df.shape[0]) * 100, 2).reset_index().rename(
-                    columns={'User': 'name', 'count': 'percent'}))
+                        columns={'User': 'name', 'count': 'percent'}))
                 with col2:
                     fig, ax = plt.subplots()
                     ax.bar(name, count)
                     ax.set_xlabel("Users")
-                    ax.set_ylabel("Message Sent")
+                    ax.set_ylabel("Messages Sent")
                     plt.xticks(rotation='vertical')
                     st.pyplot(fig)
 
-            # Emoji
+            # Emoji Analysis
             emojiDF = functions.getEmoji(df)
             st.title("Emoji Analysis")
             col1, col2 = st.columns(2)
@@ -80,7 +94,7 @@ if file:
                 plt.legend()
                 st.pyplot(fig)
 
-            # Common Word
+            # Common Word Analysis
             commonWord = functions.MostCommonWords(df)
             fig, ax = plt.subplots()
             ax.bar(commonWord[0], commonWord[1])
@@ -115,6 +129,7 @@ if file:
             ax.imshow(df_wc)
             st.pyplot(fig)
 
+            # Weekly Activity Map
             st.title("Weekly Activity Map")
             user_heatmap = functions.activity_heatmap(df)
             fig, ax = plt.subplots()
@@ -122,4 +137,4 @@ if file:
             st.pyplot(fig)
 
     except Exception as e:
-        st.subheader("Unable to Process Your Request")
+        st.subheader("Unable to Process Your Request: " + str(e))

@@ -170,3 +170,45 @@ def create_wordcloud(df):
     df['Message'] = df['Message'].apply(remove_stop_words)
     df_wc = wc.generate(df['Message'].str.cat(sep=" "))
     return df_wc
+
+
+def getStats(df):
+    media = df[df['Message'] == "<Media omitted> "]
+    media_cnt = media.shape[0]
+    df.drop(media.index, inplace=True)
+    deleted_msgs = df[df['Message'] == "This message was deleted "]
+    deleted_msgs_cnt = deleted_msgs.shape[0]
+    df.drop(deleted_msgs.index, inplace=True)
+    temp = df[df['User'] == 'Notifications']
+    df.drop(temp.index, inplace=True)
+    
+    extractor = urlextract.URLExtract()
+    links = []
+    high_priority_links = []
+    low_priority_links = []
+    reminders = []
+
+    for msg in df['Message']:
+        x = extractor.find_urls(msg)
+        if x:
+            links.extend(x)
+            # Check for high priority keywords
+            if any(keyword in msg.lower() for keyword in ['reminder', 'asap', 'urgent', 'due', 'today']):
+                reminders.append(msg)
+                high_priority_links.extend(x)
+            else:
+                low_priority_links.extend(x)
+
+    links_cnt = len(links)
+    word_list = []
+    for msg in df['Message']:
+        word_list.extend(msg.split())
+    word_count = len(word_list)
+    msg_count = df.shape[0]
+
+    links_dict = {
+        'high_priority': high_priority_links,
+        'low_priority': low_priority_links
+    }
+
+    return df, media_cnt, deleted_msgs_cnt, links_cnt, word_count, msg_count, links_dict, reminders
