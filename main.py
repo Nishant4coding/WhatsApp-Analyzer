@@ -1,18 +1,63 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.font_manager import FontProperties
 import seaborn as sns
+from email_utils import send_email_notification
+from sms import send_sms_twilio
 import functions
+from textblob import TextBlob
 
 st.title('WhatsApp Chat Analyzer')
-file = st.file_uploader("Choose a file")
+
+# File uploader for WhatsApp chat file
+file = st.file_uploader("Choose a WhatsApp Chat File", type=["txt"])
+
+# Function to create email content with additional insights
+def create_email_content(reminders, df):
+    email_body = ""
+
+    # Adding reminders
+    if reminders:
+        email_body += "Here are your high-priority reminders:\n"
+        for reminder in reminders:
+            email_body += f"- {reminder}\n"
+    else:
+        email_body += "No reminders found.\n"
+
+    # Chat Statistics
+    email_body += "\nChat Statistics:\n"
+    total_messages = df.shape[0]
+    total_words = df['Message'].apply(lambda x: len(x.split())).sum()
+    media_shared = df['Media'].count() if 'Media' in df.columns else 0
+    deleted_messages = df['Deleted'].count() if 'Deleted' in df.columns else 0
+
+    email_body += f"Total Messages: {total_messages}\n"
+    email_body += f"Total Words: {total_words}\n"
+    email_body += f"Media Shared: {media_shared}\n"
+    email_body += f"Messages Deleted: {deleted_messages}\n"
+
+    # Sentiment analysis
+    df['Sentiment'] = df['Message'].apply(lambda x: TextBlob(x).sentiment.polarity)
+    avg_sentiment = df['Sentiment'].mean()
+    email_body += f"\nAverage Sentiment Score: {avg_sentiment:.2f}\n"
+
+    # Active hours analysis
+    df['Date'] = df['Date'].astype(str)  # Ensure 'Date' is a string
+    df['Time'] = df['Time'].astype(str)  # Ensure 'Time' is a string
+
+    df['DateTime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'], dayfirst=dayfirst)
+    df['Hour'] = df['DateTime'].dt.hour
+
+    hourly_activity = df['Hour'].value_counts().idxmax()
+    email_body += f"\nMost Active Hour: {hourly_activity}:00\n"
+
+    return email_body
 
 if file:
     df = functions.generateDataFrame(file)
     try:
-        dayfirst = st.radio("Select Date Format in text file:", ('dd-mm-yy', 'mm-dd-yy'))
+        # User selects date format in the text file
+        dayfirst = st.radio("Select Date Format in Text File:", ('dd-mm-yy', 'mm-dd-yy'))
         dayfirst = True if dayfirst == 'dd-mm-yy' else False
         
         users = functions.getUsers(df)
@@ -21,48 +66,39 @@ if file:
 
         if st.sidebar.button("Show Analysis"):
             selected_user = users_s
+            st.title(f"Showing Results for: {selected_user}")
 
-            st.title("Showing Results for: " + selected_user)
             df = functions.PreProcess(df, dayfirst)
+
             if selected_user != "Everyone":
                 df = df[df['User'] == selected_user]
-            
+
             df, media_cnt, deleted_msgs_cnt, links_cnt, word_count, msg_count, links_dict, reminders = functions.getStats(df)
 
-            # Display reminder messages
-            st.title("Reminder Messages")
-            for reminder in reminders:
-                st.write(reminder)
+            if reminders:
+                try:
+                    email_content = create_email_content(reminders, df)
+                    send_email_notification(
+                        sender_email="nishant.21scse1010736@galgotiasuniversity.edu.in",
+                        receiver_email="srivastava4nishant@gmail.com",
+                        app_password="mvug rrbt gwwt ieei",
+                        subject="WhatsApp Chat Analysis Insights",
+                        body=email_content
+                    )
+                    st.success("Analysis insights sent via email successfully!")
 
-            # Display links based on priority
-            st.title("Links Shared")
-            st.subheader("High Priority Links")
-            st.write(links_dict['high_priority'])
+                    for reminder in reminders:
+                        send_sms_twilio(
+                            to_number="+918005151678",
+                            message_body=f"Reminder: {reminder}"
+                        )
+                    st.success("SMS alerts sent successfully!")
 
-            st.subheader("Low Priority Links")
-            st.write(links_dict['low_priority'])
+                except Exception as e:
+                    st.error(f"Error sending email or SMS: {e}")
+            else:
+                st.warning("No reminders to send.")
 
-            # Chat Statistics
-            st.title("Chat Statistics")
-            stats_c = ["Total Messages", "Total Words", "Media Shared", "Links Shared", "Messages Deleted"]
-            c1, c2, c3, c4, c5 = st.columns(5)
-            with c1:
-                st.subheader(stats_c[0])
-                st.title(msg_count)
-            with c2:
-                st.subheader(stats_c[1])
-                st.title(word_count)
-            with c3:
-                st.subheader(stats_c[2])
-                st.title(media_cnt)
-            with c4:
-                st.subheader(stats_c[3])
-                st.title(links_cnt)
-            with c5:
-                st.subheader(stats_c[4])
-                st.title(deleted_msgs_cnt)
-
-            # User Activity Count
             if selected_user == 'Everyone':
                 x = df['User'].value_counts().head()
                 name = x.index
@@ -85,7 +121,6 @@ if file:
             emojiDF = functions.getEmoji(df)
             st.title("Emoji Analysis")
             col1, col2 = st.columns(2)
-
             with col1:
                 st.dataframe(emojiDF)
             with col2:
@@ -122,7 +157,7 @@ if file:
             st.title('Most Busy Months')
             functions.MonthAct(df)
 
-            # WordCloud
+            # WordCloud Visualization
             st.title("Wordcloud")
             df_wc = functions.create_wordcloud(df)
             fig, ax = plt.subplots()

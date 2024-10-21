@@ -1,5 +1,7 @@
+from email.mime.text import MIMEText
 import re
 from collections import Counter
+import smtplib
 
 import pandas as pd
 import seaborn as sns
@@ -9,6 +11,22 @@ import matplotlib.pyplot as plt
 import urlextract
 import emoji
 from wordcloud import WordCloud
+
+
+def send_email_notification(sender_email, receiver_email, password, subject, body):
+    message = MIMEText(body)
+    message["Subject"] = subject
+    message["From"] = sender_email
+    message["To"] = receiver_email
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, password)
+            server.sendmail(sender_email, receiver_email, message.as_string())
+        print("Email sent successfully!")
+    except Exception as e:
+        print(f"Error: {e}")
+
 
 
 def generateDataFrame(file):
