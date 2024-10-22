@@ -1,6 +1,8 @@
-import pandas as pd
 import re
+
+import pandas as pd
 import urlextract
+
 # from textblob import TextBlob
 # import smtplib
 # from email.mime.text import MIMEText

@@ -1,15 +1,14 @@
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from email_utils import send_email_notification
-import functions
-from textblob import TextBlob
 from datetime import datetime, timedelta
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import streamlit as st
+import tensorflow as tf
 from transformers import pipeline
-import tensorflow as tf 
 
-
+import functions
+from email_utils import send_email_notification
 
 # # summarizer = pipeline("summarization", model="t5-small")
 # def summarize_chat(chat_text):
@@ -49,10 +48,10 @@ def create_email_content(reminders, df, links_dict):
     email_body += f"\nChat Statistics:\nTotal Messages: {total_messages}\nTotal Words: {total_words}\n"
     email_body += f"Media Shared: {media_shared}\nMessages Deleted: {deleted_messages}\n"
 
-    # Sentiment analysis
-    df['Sentiment'] = df['Message'].apply(lambda x: TextBlob(x).sentiment.polarity)
-    avg_sentiment = df['Sentiment'].mean()
-    email_body += f"\nAverage Sentiment Score: {avg_sentiment:.2f}\n"
+    # # Sentiment analysis
+    # df['Sentiment'] = df['Message'].apply(lambda x: TextBlob(x).sentiment.polarity)
+    # avg_sentiment = df['Sentiment'].mean()
+    # email_body += f"\nAverage Sentiment Score: {avg_sentiment:.2f}\n"
 
     # Active hour analysis
     df['DateTime'] = pd.to_datetime(df['Date'].astype(str) + ' ' + df['Time'].astype(str), dayfirst=dayfirst)
