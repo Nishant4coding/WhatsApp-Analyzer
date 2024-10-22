@@ -1,7 +1,7 @@
 import pandas as pd
 import re
 import urlextract
-from textblob import TextBlob
+# from textblob import TextBlob
 # import smtplib
 # from email.mime.text import MIMEText
 # from twilio.rest import Client
