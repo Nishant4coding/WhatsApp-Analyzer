@@ -1,232 +1,110 @@
-from email.mime.text import MIMEText
-import re
-from collections import Counter
-import smtplib
-
 import pandas as pd
-import seaborn as sns
-import streamlit as st
-from collections import Counter
-import matplotlib.pyplot as plt
+import re
 import urlextract
-import emoji
-from wordcloud import WordCloud
+from textblob import TextBlob
+# import smtplib
+# from email.mime.text import MIMEText
+# from twilio.rest import Client
 
-
-def send_email_notification(sender_email, receiver_email, password, subject, body):
-    message = MIMEText(body)
-    message["Subject"] = subject
-    message["From"] = sender_email
-    message["To"] = receiver_email
-
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender_email, password)
-            server.sendmail(sender_email, receiver_email, message.as_string())
-        print("Email sent successfully!")
-    except Exception as e:
-        print(f"Error: {e}")
-
-
-
+# Generate DataFrame from uploaded file
 def generateDataFrame(file):
-    data = file.read().decode("utf-8")
-    data = data.replace('\u202f', ' ')
-    data = data.replace('\n', ' ')
-    dt_format = '\d{1,2}/\d{1,2}/\d{2,4},\s\d{1,2}:\d{2}\s?(?:AM\s|PM\s|am\s|pm\s)?-\s'
-    msgs = re.split(dt_format, data)[1:]
+    data = file.read().decode("utf-8").replace('\u202f', ' ').replace('\n', ' ')
+    dt_format = r'\d{1,2}/\d{1,2}/\d{2,4},\s\d{1,2}:\d{2}\s?(?:AM\s|PM\s|am\s|pm\s)?-\s'
+    messages = re.split(dt_format, data)[1:]
     date_times = re.findall(dt_format, data)
-    date = []
-    time = []
+    
+    date, time, users, message = [], [], [], []
     for dt in date_times:
-        date.append(re.search('\d{1,2}/\d{1,2}/\d{2,4}', dt).group())
-        time.append(re.search('\d{1,2}:\d{2}\s?(?:AM|PM|am|pm)?', dt).group())
-    users = []
-    message = []
-    for m in msgs:
-        s = re.split('([\w\W]+?):\s', m)
-        if (len(s) < 3):
+        date.append(re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', dt).group())
+        time.append(re.search(r'\d{1,2}:\d{2}\s?(?:AM|PM|am|pm)?', dt).group())
+
+    for msg in messages:
+        split_msg = re.split(r'([\w\W]+?):\s', msg)
+        if len(split_msg) < 3:
             users.append("Notifications")
-            message.append(s[0])
+            message.append(split_msg[0])
         else:
-            users.append(s[1])
-            message.append(s[2])
+            users.append(split_msg[1])
+            message.append(split_msg[2])
+
     df = pd.DataFrame(list(zip(date, time, users, message)), columns=["Date", "Time(U)", "User", "Message"])
     return df
 
-
+# Get unique users from chat data
 def getUsers(df):
     users = df['User'].unique().tolist()
     users.sort()
-    users.remove('Notifications')
+    if 'Notifications' in users:
+        users.remove('Notifications')
     users.insert(0, 'Everyone')
     return users
 
-
-def PreProcess(df,dayf):
-    df['Date'] = pd.to_datetime(df['Date'], dayfirst=dayf)
+# Preprocess the data
+def PreProcess(df, dayfirst):
+    df['Date'] = pd.to_datetime(df['Date'], dayfirst=dayfirst)
     df['Time'] = pd.to_datetime(df['Time(U)']).dt.time
-    df['year'] = df['Date'].apply(lambda x: int(str(x)[:4]))
-    df['month'] = df['Date'].apply(lambda x: int(str(x)[5:7]))
-    df['date'] = df['Date'].apply(lambda x: int(str(x)[8:10]))
-    df['day'] = df['Date'].apply(lambda x: x.day_name())
+    df['year'] = df['Date'].dt.year
+    df['month'] = df['Date'].dt.month
+    df['day'] = df['Date'].dt.day_name()
     df['hour'] = df['Time'].apply(lambda x: int(str(x)[:2]))
-    df['month_name'] = df['Date'].apply(lambda x: x.month_name())
     return df
 
-
+# Extract statistics, reminders, and links from chat data
 def getStats(df):
-    media = df[df['Message'] == "<Media omitted> "]
-    media_cnt = media.shape[0]
+    media = df[df['Message'] == "<Media omitted>"]
+    media_count = media.shape[0]
     df.drop(media.index, inplace=True)
-    deleted_msgs = df[df['Message'] == "This message was deleted "]
-    deleted_msgs_cnt = deleted_msgs.shape[0]
+
+    deleted_msgs = df[df['Message'] == "This message was deleted"]
+    deleted_msg_count = deleted_msgs.shape[0]
     df.drop(deleted_msgs.index, inplace=True)
-    temp = df[df['User'] == 'Notifications']
-    df.drop(temp.index, inplace=True)
-    print("h4")
+
+    notifications = df[df['User'] == 'Notifications']
+    df.drop(notifications.index, inplace=True)
+
     extractor = urlextract.URLExtract()
-    print("h3")
-    links = []
+    links, reminders, urgent_links = [], [], []
+
     for msg in df['Message']:
-        x = extractor.find_urls(msg)
-        if x:
-            links.extend(x)
-    links_cnt = len(links)
-    word_list = []
-    for msg in df['Message']:
-        word_list.extend(msg.split())
-    word_count = len(word_list)
+        extracted_links = extractor.find_urls(msg)
+        if extracted_links:
+            links.extend(extracted_links)
+            
+            urgent_links_in_message = [link for link in extracted_links if "forms.google" in link or "meet.google" in link]
+            
+            if urgent_links_in_message:
+                urgent_links.extend(urgent_links_in_message)
+            
+        if any(keyword in msg.lower() for keyword in ['reminder', 'urgent', 'asap', 'due']):
+            reminders.append(msg)
+
+
+    word_count = df['Message'].apply(lambda x: len(x.split())).sum()
     msg_count = df.shape[0]
-    return df, media_cnt, deleted_msgs_cnt, links_cnt, word_count, msg_count
+    links_dict = {'all_links': links, 'reminders': reminders}
 
+    return df, media_count, deleted_msg_count, len(links), word_count, msg_count, links_dict, reminders, urgent_links
 
-def getEmoji(df):
-    emojis = []
-    for message in df['Message']:
-        emojis.extend([c for c in message if c in emoji.EMOJI_DATA])
-    return pd.DataFrame(Counter(emojis).most_common(len(Counter(emojis))))
+# Send email notification
+# def send_email_notification(sender_email, receiver_email, app_password, subject, body):
+#     msg = MIMEText(body)
+#     msg['Subject'] = subject
+#     msg['From'] = sender_email
+#     msg['To'] = receiver_email
 
+#     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+#         smtp.login(sender_email, app_password)
+#         smtp.sendmail(sender_email, receiver_email, msg.as_string())
 
-def getMonthlyTimeline(df):
+# # Send SMS via Twilio
+# def send_sms_twilio(to_number, message_body):
+#     account_sid = 'your_twilio_account_sid'
+#     auth_token = 'your_twilio_auth_token'
+#     client = Client(account_sid, auth_token)
 
-    df.columns = df.columns.str.strip()
-    df=df.reset_index()
-    timeline = df.groupby(['year', 'month']).count()['Message'].reset_index()
-    time = []
-    for i in range(timeline.shape[0]):
-        time.append(str(timeline['month'][i]) + "-" + str(timeline['year'][i]))
-    timeline['time'] = time
-    return timeline
-
-
-def MostCommonWords(df):
-    f = open('stop_hinglish.txt')
-    stop_words = f.read()
-    f.close()
-    words = []
-    for message in df['Message']:
-        for word in message.lower().split():
-            if word not in stop_words:
-                words.append(word)
-    return pd.DataFrame(Counter(words).most_common(20))
-
-def dailytimeline(df):
-    df['taarek'] = df['Date']
-    daily_timeline = df.groupby('taarek').count()['Message'].reset_index()
-    fig, ax = plt.subplots()
-    #ax.figure(figsize=(100, 80))
-    ax.plot(daily_timeline['taarek'], daily_timeline['Message'])
-    ax.set_ylabel("Messages Sent")
-    st.title('Daily Timeline')
-    st.pyplot(fig)
-
-def WeekAct(df):
-    x = df['day'].value_counts()
-    fig, ax = plt.subplots()
-    ax.bar(x.index, x.values)
-    ax.set_xlabel("Days")
-    ax.set_ylabel("Message Sent")
-    plt.xticks(rotation='vertical')
-    st.pyplot(fig)
-
-def MonthAct(df):
-    x = df['month_name'].value_counts()
-    fig, ax = plt.subplots()
-    ax.bar(x.index, x.values)
-    ax.set_xlabel("Months")
-    ax.set_ylabel("Message Sent")
-    plt.xticks(rotation='vertical')
-    st.pyplot(fig)
-
-def activity_heatmap(df):
-    period = []
-    for hour in df[['day', 'hour']]['hour']:
-        if hour == 23:
-            period.append(str(hour) + "-" + str('00'))
-        elif hour == 0:
-            period.append(str('00') + "-" + str(hour + 1))
-        else:
-            period.append(str(hour) + "-" + str(hour + 1))
-
-    df['period'] = period
-    user_heatmap = df.pivot_table(index='day', columns='period', values='Message', aggfunc='count').fillna(0)
-    return user_heatmap
-def create_wordcloud(df):
-
-    f = open('stop_hinglish.txt', 'r')
-    stop_words = f.read()
-    f.close()
-    def remove_stop_words(message):
-        y = []
-        for word in message.lower().split():
-            if word not in stop_words:
-                y.append(word)
-        return " ".join(y)
-
-    wc = WordCloud(width=500,height=500,min_font_size=10,background_color='white')
-    df['Message'] = df['Message'].apply(remove_stop_words)
-    df_wc = wc.generate(df['Message'].str.cat(sep=" "))
-    return df_wc
-
-
-def getStats(df):
-    media = df[df['Message'] == "<Media omitted> "]
-    media_cnt = media.shape[0]
-    df.drop(media.index, inplace=True)
-    deleted_msgs = df[df['Message'] == "This message was deleted "]
-    deleted_msgs_cnt = deleted_msgs.shape[0]
-    df.drop(deleted_msgs.index, inplace=True)
-    temp = df[df['User'] == 'Notifications']
-    df.drop(temp.index, inplace=True)
-    
-    extractor = urlextract.URLExtract()
-    links = []
-    high_priority_links = []
-    low_priority_links = []
-    reminders = []
-
-    for msg in df['Message']:
-        x = extractor.find_urls(msg)
-        if x:
-            links.extend(x)
-            # Check for high priority keywords
-            if any(keyword in msg.lower() for keyword in ['reminder', 'asap', 'urgent', 'due', 'today']):
-                reminders.append(msg)
-                high_priority_links.extend(x)
-            else:
-                low_priority_links.extend(x)
-
-    links_cnt = len(links)
-    word_list = []
-    for msg in df['Message']:
-        word_list.extend(msg.split())
-    word_count = len(word_list)
-    msg_count = df.shape[0]
-
-    links_dict = {
-        'high_priority': high_priority_links,
-        'low_priority': low_priority_links
-    }
-
-    return df, media_cnt, deleted_msgs_cnt, links_cnt, word_count, msg_count, links_dict, reminders
+#     message = client.messages.create(
+#         body=message_body,
+#         from_='+your_twilio_phone_number',
+#         to=to_number
+#     )
+#     return message.sid
