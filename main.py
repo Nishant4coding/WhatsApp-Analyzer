@@ -1,16 +1,10 @@
 from datetime import datetime, timedelta
-
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
 import functions
 from email_utils import send_email_notification
-
-# # summarizer = pipeline("summarization", model="t5-small")
-# def summarize_chat(chat_text):
-#     summary = summarizer(chat_text, max_length=100, min_length=30, do_sample=False)
-#     return summary[0]['summary_text']
 
 st.title('WhatsApp Chat Analyzer')
 
@@ -23,18 +17,19 @@ def create_email_content(reminders, df, links_dict):
 
     # Reminders
     if reminders:
-        # chat_summary = summarize_chat(" ".join(reminders))
-        email_body += "Here are your high-priority reminders:\n{chat_summary}\n"
+        email_body += "Here are your high-priority reminders:\n"
         for reminder in reminders:
             email_body += f"- {reminder}\n"
-            # Add urgent links to email body
+    else:
+        email_body += "No reminders found.\n"
+
+    # Urgent Links
     if urgent_links:
         email_body += "\nHere are your urgent links:\n"
         for link in urgent_links:
             email_body += f"- {link}\n"
-            # email_body += f"- {link}\n"
     else:
-        email_body += "No reminders found.\n"
+        email_body += "No urgent links found.\n"
 
     # Chat statistics
     total_messages = df.shape[0]
@@ -44,11 +39,6 @@ def create_email_content(reminders, df, links_dict):
 
     email_body += f"\nChat Statistics:\nTotal Messages: {total_messages}\nTotal Words: {total_words}\n"
     email_body += f"Media Shared: {media_shared}\nMessages Deleted: {deleted_messages}\n"
-
-    # # Sentiment analysis
-    # df['Sentiment'] = df['Message'].apply(lambda x: TextBlob(x).sentiment.polarity)
-    # avg_sentiment = df['Sentiment'].mean()
-    # email_body += f"\nAverage Sentiment Score: {avg_sentiment:.2f}\n"
 
     # Active hour analysis
     df['DateTime'] = pd.to_datetime(df['Date'].astype(str) + ' ' + df['Time'].astype(str), dayfirst=dayfirst)
@@ -70,6 +60,9 @@ if file:
         users_s = st.sidebar.selectbox("Select User to View Analysis", users)
         selected_user = ""
 
+        # Receiver Email Input
+        receiver_email = st.sidebar.text_input("Enter Receiver Email Address", "")
+        
         # Filter Option: Time Range Selection
         st.sidebar.title("Select Time Range")
         time_range = st.sidebar.radio(
@@ -112,32 +105,44 @@ if file:
             
             st.write(f"Time Range: {time_range}")
             st.write(f"Total Messages in Selected Range: {msg_count}")
-            
 
-
+            # Display Reminders and Urgent Links in the Streamlit app
             if reminders or urgent_links:
-                email_content = create_email_content(reminders, df, urgent_links)
-                try:
-                    send_email_notification(
-                        sender_email="nishant.21scse1010736@galgotiasuniversity.edu.in",
-                        receiver_email="srivastava4nishant@gmail.com",
-                        app_password="mvug rrbt gwwt ieei",
-                        subject="WhatsApp Chat Analysis Insights",
-                        body=email_content
-                    )
-                    st.success("Analysis insights sent via email successfully!")
+                
 
-                    # for reminder in reminders:
-                    #     send_sms_twilio(
-                    #         to_number="+918005151678",
-                    #         message_body=f"Reminder: {reminder}"
-                    #     )
-                    # st.success("SMS alerts sent successfully!")
+                # Send email if a receiver email is provided
+                if receiver_email:
+                    email_content = create_email_content(reminders, df, urgent_links)
+                    try:
+                        send_email_notification(
+                            sender_email="nishant.21scse1010736@galgotiasuniversity.edu.in",
+                            receiver_email=receiver_email,
+                            app_password="mvug rrbt gwwt ieei",
+                            subject="WhatsApp Chat Analysis Insights",
+                            body=email_content
+                        )
+                        st.success("Analysis insights sent via email successfully!")
+                    except Exception as e:
+                        st.error(f"Error sending email: {e}")
+                        
+                    st.subheader("High-Priority Reminders:")
+                    if reminders:
+                        for reminder in reminders:
+                            st.write(f"- {reminder}")
+                    else:
+                        st.write("No reminders found.")
 
-                except Exception as e:
-                    st.error(f"Error sending email or SMS: {e}")
+                    st.subheader("Urgent Links:")
+                    if urgent_links:
+                        for link in urgent_links:
+                            st.write(f"- {link}")
+                    else:
+                        st.write("No urgent links found.")
+                else:
+                    st.warning("Please enter a receiver email address to send analysis insights via email.")
             else:
-                st.warning("No reminders to send.")
+                st.warning("No reminders or urgent links to send.")
+            
 
             # Messaging frequency chart
             if selected_user == 'Everyone':
