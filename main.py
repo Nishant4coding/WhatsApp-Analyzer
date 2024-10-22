@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from email_utils import send_email_notification
-from sms import send_sms_twilio
 import functions
 from textblob import TextBlob
 from datetime import datetime, timedelta
