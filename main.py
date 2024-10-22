@@ -2,10 +2,7 @@ from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
 import streamlit as st
-import tensorflow as tf
-from transformers import pipeline
 
 import functions
 from email_utils import send_email_notification
