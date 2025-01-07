@@ -1,20 +1,17 @@
 import re
-
 import pandas as pd
 import urlextract
+from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
 
-# from textblob import TextBlob
-# import smtplib
-# from email.mime.text import MIMEText
-# from twilio.rest import Client
-
-# Generate DataFrame from uploaded file
+# Function to generate DataFrame from chat file
 def generateDataFrame(file):
     data = file.read().decode("utf-8").replace('\u202f', ' ').replace('\n', ' ')
     dt_format = r'\d{1,2}/\d{1,2}/\d{2,4},\s\d{1,2}:\d{2}\s?(?:AM\s|PM\s|am\s|pm\s)?-\s'
     messages = re.split(dt_format, data)[1:]
     date_times = re.findall(dt_format, data)
-    
+
     date, time, users, message = [], [], [], []
     for dt in date_times:
         date.append(re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', dt).group())
@@ -43,13 +40,29 @@ def getUsers(df):
 
 # Preprocess the data
 def PreProcess(df, dayfirst):
-    df['Date'] = pd.to_datetime(df['Date'], dayfirst=dayfirst)
-    df['Time'] = pd.to_datetime(df['Time(U)']).dt.time
+    # Handle missing or invalid time values by filling them with a default time (e.g., '00:00')
+    df['Time(U)'] = df['Time(U)'].apply(lambda x: x if re.match(r'\d{1,2}:\d{2}', x) else '00:00')
+
+    # Convert 'Date' and 'Time(U)' to proper datetime format
+    try:
+        df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y', errors='coerce')  # Handle date format like 12/10/24
+        df['Time'] = pd.to_datetime(df['Time(U)'], format='%H:%M', errors='coerce').dt.time  # Handle time format like 22:05
+    except Exception as e:
+        print(f"Error processing Date/Time columns: {e}")
+
+    # Fill NaT (invalid or missing values) with a default time (e.g., '00:00')
+    df['Time'] = df['Time'].fillna('00:00')
+
+    # Add new columns for year, month, day, and hour
     df['year'] = df['Date'].dt.year
     df['month'] = df['Date'].dt.month
     df['day'] = df['Date'].dt.day_name()
-    df['hour'] = df['Time'].apply(lambda x: int(str(x)[:2]))
+    
+    # Safely extract hour by checking for NaT or missing time
+    df['hour'] = df['Time'].apply(lambda x: int(str(x)[:2]) if pd.notna(x) else 0)  # Extract hour from time
+
     return df
+
 
 # Extract statistics, reminders, and links from chat data
 def getStats(df):
@@ -88,25 +101,12 @@ def getStats(df):
     return df, media_count, deleted_msg_count, len(links), word_count, msg_count, links_dict, reminders, urgent_links
 
 # Send email notification
-# def send_email_notification(sender_email, receiver_email, app_password, subject, body):
-#     msg = MIMEText(body)
-#     msg['Subject'] = subject
-#     msg['From'] = sender_email
-#     msg['To'] = receiver_email
+def send_email_notification(sender_email, receiver_email, app_password, subject, body):
+    msg = MIMEText(body, 'html')  # Send as HTML for better formatting
+    msg['Subject'] = subject
+    msg['From'] = sender_email
+    msg['To'] = receiver_email
 
-#     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-#         smtp.login(sender_email, app_password)
-#         smtp.sendmail(sender_email, receiver_email, msg.as_string())
-
-# # Send SMS via Twilio
-# def send_sms_twilio(to_number, message_body):
-#     account_sid = 'your_twilio_account_sid'
-#     auth_token = 'your_twilio_auth_token'
-#     client = Client(account_sid, auth_token)
-
-#     message = client.messages.create(
-#         body=message_body,
-#         from_='+your_twilio_phone_number',
-#         to=to_number
-#     )
-#     return message.sid
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(sender_email, app_password)
+        smtp.sendmail(sender_email, receiver_email, msg.as_string())
